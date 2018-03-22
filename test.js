@@ -1,3 +1,5 @@
+const fs = require('fs');
+
 function hello(fn, b) {
   return fn() + b;
 }
@@ -8,4 +10,6 @@ function say() {
 
 hello(say, 42);
 
-// console.log(say());
+console.log(say());
+
+fs.readFile('foo.txt', 'utf-8', (err, data) => {});

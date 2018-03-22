@@ -417,4 +417,15 @@ play: src/jinwoo/play.ml
 		-lflags "$(BYTECODE_LINKER_FLAGS)" \
 		src/jinwoo/play.byte
 
+play2: src/jinwoo/play2.ml
+	# Both lwt and lwt_ppx provide ppx stuff. Fixed in lwt 4.0.0
+	# https://github.com/ocsigen/lwt/issues/453
+	export OCAMLFIND_IGNORE_DUPS_IN="$(shell ocamlfind query lwt)"; \
+	ocamlbuild -use-ocamlfind \
+		-build-dir _build \
+		-lflags -custom -no-links \
+		$(INCLUDE_OPTS) $(FINDLIB_OPTS) \
+		-lflags "$(BYTECODE_LINKER_FLAGS)" \
+		src/jinwoo/play2.byte
+
 -include facebook/Makefile
