@@ -63,21 +63,12 @@ console.log('hello');
 }"
 *)
 
-let file_contents_exn filename =
-  let ic = open_in filename in
-  let lines = ref [] in
-  try
-    while true do
-      lines := input_line ic :: !lines
-    done;
-    ""
-  with
-  | End_of_file ->
-    close_in ic;
-    String.concat "\n" (List.rev !lines)
-  | e ->
-    close_in_noerr ic;
-    raise e
+let file_content filename =
+  let ic = open_in_bin filename in
+  let length = in_channel_length ic in
+  let buf = Buffer.create length in
+  Buffer.add_channel buf ic length;
+  Buffer.contents buf
 
 let parse content =
   let (ast, _) = Parser_flow.program ~fail:false content in
@@ -116,55 +107,17 @@ let create_context filename =
   let file_key = File_key.SourceFile filename in
   Context.make sig_cx metadata file_key ""
 
-let rec print_expression cx exp = Ast.Expression.(
-  (*
-    let (loc, exp') = exp.expression in
-    let result = match Query_types.query_type cx loc with
-      | Query_types.FailureNoMatch -> "no match"
-      | Query_types.FailureUnparseable _ -> "unparseable"
-      | Query_types.Success (_, t) ->
-        Ty_printer.string_of_t ~force_single_line:true t
-    in
-    Printf.printf "%s\n" result;
-    *)
-    let (loc, exp') = exp in
-    let result = match Query_types.query_type cx loc with
-      | Query_types.FailureNoMatch -> "no match"
-      | Query_types.FailureUnparseable _ -> "unparseable"
-      | Query_types.Success (_, t) ->
-        Ty_printer.string_of_t ~force_single_line:true t
-    in
-    Printf.printf "%s\n" result;
-    match exp' with
-    | Binary {Binary.left; right; _} ->
-      print_expression cx left;
-      print_expression cx right
-    | Function {Ast.Function.params; _} ->
-      let (_, params') = params in
-      let patterns = params'.Ast.Function.Params.params in
-      List.iter (fun (_, pattern) ->
-          match pattern with
-          | Ast.Pattern.Identifier id ->
-            let (loc, id') = id.Ast.Pattern.Identifier.name in
-            Printf.printf "%s\n" id';
-            let result = match Query_types.query_type cx loc with
-              | Query_types.FailureNoMatch -> "no match"
-              | Query_types.FailureUnparseable _ -> "unparseable"
-              | Query_types.Success (_, t) ->
-                Ty_printer.string_of_t ~force_single_line:true t
-            in
-            Printf.printf "%s\n" result;
-          | _ -> ())
-        patterns
-    | _ -> ()
-  )
+let type_at cx loc =
+  match Query_types.query_type cx loc with
+  | Query_types.FailureNoMatch -> "(no match)"
+  | Query_types.FailureUnparseable _ -> "(unparseable)"
+  | Query_types.Success (_, t) ->
+    Ty_printer.string_of_t ~force_single_line:true t
 
 let print_ast_with_types cx ast =
   let (_, stmts, _) = ast in
   List.iter (fun (_, stmt) ->
       match stmt with
-      | Ast.Statement.Expression exp ->
-        print_expression cx exp.Ast.Statement.Expression.expression
       | Ast.Statement.FunctionDeclaration {Ast.Function.params; _} ->
         let (_, params') = params in
         let patterns = params'.Ast.Function.Params.params in
@@ -172,21 +125,14 @@ let print_ast_with_types cx ast =
             match pattern with
             | Ast.Pattern.Identifier id ->
               let (loc, id') = id.Ast.Pattern.Identifier.name in
-              Printf.printf "%s\n" id';
-              let result = match Query_types.query_type cx loc with
-                | Query_types.FailureNoMatch -> "no match"
-                | Query_types.FailureUnparseable _ -> "unparseable"
-                | Query_types.Success (_, t) ->
-                  Ty_printer.string_of_t ~force_single_line:true t
-              in
-              Printf.printf "%s\n" result;
+              Printf.printf "%s: %s\n%!" id' (type_at cx loc);
             | _ -> ())
           patterns
-      | _ -> ())
+      | _ -> Printf.printf "(only functions are parsed)\n%!")
     stmts
 
 let play filename =
-  let content = file_contents_exn filename in
+  let content = file_content filename in
   let cx = create_context filename in
   let ast = parse content in
   let file_sig = match File_sig.program ast with
@@ -199,3 +145,5 @@ let play filename =
   print_ast_with_types cx ast
 
 let () = play "test.js"
+
+(* TODO(jinwoo): Load libfiles so that usual JS objects are identified *)

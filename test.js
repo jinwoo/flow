@@ -1,5 +1,11 @@
-function hello(a, b) {
-  return a + b;
+function hello(fn, b) {
+  return fn() + b;
 }
 
-hello(3, 4);
+function say() {
+  return 'hello';
+}
+
+hello(say, 42);
+
+// console.log(say());
