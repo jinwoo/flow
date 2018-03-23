@@ -158,6 +158,8 @@ let set_libs filenames =
   Flow_js.flow_t master_cx (builtin_module, Flow_js.builtins master_cx);
   Merge_js.ContextOptimizer.sig_context master_cx [Files.lib_module_ref]
 
+(* Currently supports only one file, as written below.
+   TODO(jinwoo): Support multiple files *)
 let infer_and_merge ~root filename ast file_sig =
   (* this is a VERY pared-down version of Merge_service.merge_strict_context.
      it relies on the JS version only supporting libs + 1 file, so every
@@ -183,13 +185,12 @@ let infer_and_merge ~root filename ast file_sig =
   in
   cx
 
-let mk_loc file line col =
-  {
-    Loc.
-    source = Some file;
-    start = { Loc.line; column = col; offset = 0; };
-    _end = { Loc.line; column = col + 1; offset = 0; };
-  }
+let mk_loc file line col = {
+  Loc.
+  source = Some file;
+  start = { Loc.line; column = col; offset = 0; };
+  _end = { Loc.line; column = col + 1; offset = 0; };
+}
 
 let infer_type filename content line col =
   let filename = File_key.SourceFile filename in
@@ -206,6 +207,9 @@ let infer_type filename content line col =
           loc, Ok (Ty_printer.string_of_t ~force_single_line:true t)
       )
 
+(* List of library files to load before other files *)
+let lib_files = ["lib/core.js"; "lib/node.js"]
+
 let file_content filename =
   let ic = open_in_bin filename in
   let length = in_channel_length ic in
@@ -214,9 +218,9 @@ let file_content filename =
   Buffer.contents buf
 
 let () =
-  let _ = set_libs ["lib/core.js"; "lib/node.js"] in
+  let _ = set_libs lib_files in
   let content = file_content "test.js" in
-  let (_, result) = infer_type "test.js" content 15 4 in
+  let (_, result) = infer_type "test.js" content 15 30 in
   let answer = match result with
     | Ok result -> result
     | Error err -> "Error: " ^ err
