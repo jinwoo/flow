@@ -13,3 +13,5 @@ hello(say, 42);
 console.log(say());
 
 fs.readFile('foo.txt', (err, data) => {});
+
+module.exports = hello;

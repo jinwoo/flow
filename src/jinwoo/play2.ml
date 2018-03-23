@@ -1,3 +1,5 @@
+(* Most of the code is copied from flow_dot_js.ml *)
+
 let error_of_parse_error source_file (loc, err) =
   let flow_err = Flow_error.EParseError (loc, err) in
   Flow_error.error_of_msg ~trace_reasons:[] ~source_file flow_err
