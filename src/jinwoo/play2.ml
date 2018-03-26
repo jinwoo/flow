@@ -162,7 +162,51 @@ let set_libs filenames =
 
 (* Currently supports only one file, as written below.
    TODO(jinwoo): Support multiple files *)
-let infer_and_merge ~root filename ast file_sig =
+
+open Utils_js
+module Reqs = Merge_js.Reqs
+
+type file_info = {
+  file_key: File_key.t;
+  ast: Loc.t Ast.program;
+  file_sig: File_sig.t;
+}
+
+let reqs_of_component file_keys required =
+  let dep_cxs, reqs =
+    List.fold_left (fun (dep_cxs, reqs) req ->
+        let r, loc, resolved_r, file = req in
+        Module_js.(match get_file Expensive.ok resolved_r with
+            | Some (File_key.ResourceFile f) ->
+              dep_cxs, Reqs.add_res (loc, f, file) reqs
+            | Some dep ->
+              let info = get_info_unsafe ~audit:Expensive.ok dep in
+              if info.checked && info.parsed then
+                (* checked implementation exists *)
+                let m = Files.module_ref dep in
+                if List.mem dep file_keys then
+                  (* impl is part of component *)
+                  dep_cxs, Reqs.add_impl (dep, m, loc, file) reqs
+                else
+                  (* look up impl sig_context *)
+                  let leader = Context_cache.find_leader dep in
+                  let dep_cx = Context_cache.find_sig leader in
+                  dep_cx::dep_cxs, Reqs.add_dep_impl (dep_cx, m, loc, file) reqs
+              else
+                (* unchecked implementation exists *)
+                dep_cxs, Reqs.add_unchecked (r, loc, file) reqs
+            | None ->
+              (* implementation doesn't exist *)
+              dep_cxs, Reqs.add_decl (r, loc, resolved_r, file) reqs
+          )
+      ) ([], Reqs.empty) required
+  in
+
+  let master_cx = Context_cache.find_sig File_key.Builtins in
+
+  master_cx, dep_cxs, reqs
+
+let infer_and_merge ~root file_info_list =
   (* this is a VERY pared-down version of Merge_service.merge_strict_context.
      it relies on the JS version only supporting libs + 1 file, so every
      module you can require() must come from a lib; this skips resolving
@@ -170,15 +214,28 @@ let infer_and_merge ~root filename ast file_sig =
   Flow_js.Cache.clear();
   let metadata = stub_metadata ~root ~checked:true in
   let master_cx = get_master_cx root in
-  let require_loc_map = File_sig.(require_loc_map file_sig.module_sig) in
-  let decls = SMap.fold (fun module_name locs acc ->
-      let m = Modulename.String module_name in
-      (module_name, locs, m, filename) :: acc
-    ) require_loc_map [] in
-  let reqs = Merge_js.Reqs.({ empty with decls }) in
+  let (file_keys, required, file_sigs) =
+    Nel.fold_left (fun (file_keys, required, file_sigs) file_info ->
+        let {file_key; ast; file_sig} = file_info in
+        let require_loc_map = File_sig.(require_loc_map file_sig.module_sig) in
+        let required = SMap.fold (fun module_name locs acc ->
+            (* TODO(jinwoo): Must resolve modules and call
+               Module_js.add_parsed_resolved_modules from somewhere *)
+            let m = Module_js.find_resolved_module ~audit:Expensive.ok
+                file_key module_name in
+            (module_name, locs, m, file_key) :: acc
+          ) require_loc_map required
+        in
+        let file_sigs = FilenameMap.add file_key file_sig file_sigs in
+        (file_key :: file_keys, required, file_sigs)
+      ) ([], [], FilenameMap.empty) file_info_list
+  in
+  let master_cx, dep_cxs, file_reqs =
+    reqs_of_component file_keys required
+  in
   let lint_severities = LintSettings.empty_severities in
   let strict_mode = StrictModeSettings.empty in
-  let file_sigs = Utils_js.FilenameMap.singleton filename file_sig in
+  let file_sigs = FilenameMap.singleton filename file_sig in
   let cx, _other_cxs = Merge_js.merge_component_strict
       ~metadata ~lint_severities ~strict_mode ~file_sigs
       ~get_ast_unsafe:(fun _ -> ast)
@@ -186,6 +243,9 @@ let infer_and_merge ~root filename ast file_sig =
       (Nel.one filename) reqs [] (Context.sig_cx master_cx)
   in
   cx
+
+let infer_and_merge_multiple ~root file_info_list = ()
+
 
 let mk_loc file line col = {
   Loc.
